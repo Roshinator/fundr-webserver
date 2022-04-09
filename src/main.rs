@@ -3,9 +3,8 @@ mod founder;
 use std::{sync::Mutex, str::FromStr};
 
 use founder::{Founder, FounderUuid};
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, http::header::ContentType, error};
-use futures::StreamExt;
-use rand::Rng;
+use actix_web::{get, web, App, HttpResponse, HttpServer, Responder, http::header::ContentType};
+
 use serde::{Deserialize, Serialize};
 
 struct FounderState
@@ -21,11 +20,19 @@ async fn main() -> std::io::Result<()>
         Founder
         {
             uuid: FounderUuid::new(),
+            name: String::from("Tim Apple"),
+            company_name: String::from("Apple"),
+            bio: String::from("Computer but sexy"),
+            image: std::path::PathBuf::from_str("images/test.jpg").unwrap()
+        },
+        Founder
+        {
+            uuid: FounderUuid::new(),
             name: String::from("Jeff Bezos"),
             company_name: String::from("Amazon"),
             bio: String::from("Imagine shopping but internet"),
-            image: std::path::PathBuf::from_str("images/test.jpg").unwrap()
-        }
+            image: std::path::PathBuf::from_str("images/pngtest.png").unwrap()
+        },
     ];
     let founder_list = web::Data::new
     (
@@ -38,7 +45,7 @@ async fn main() -> std::io::Result<()>
     HttpServer::new(move || {
         App::new()
             .service(home)
-            .service(get_test)
+            .service(get_founder)
             .service(get_founder_img)
             .app_data(founder_list.clone())
     })
@@ -53,12 +60,24 @@ async fn home() -> impl Responder
     HttpResponse::Ok().body("Yay it wowks UwU :3")
 }
 
+#[derive(Serialize, Deserialize)]
+struct GetFounderQueryParams { count: Option<u8> }
 #[get("/get-founder")]
-async fn get_test(data: web::Data<FounderState>) -> impl Responder
+async fn get_founder(query: web::Query<GetFounderQueryParams>, data: web::Data<FounderState>) -> impl Responder
 {
     let list = data.founders.lock().unwrap();
-    let founder = &list[rand::thread_rng().gen_range(0..list.len())];
-    let result = serde_json::to_string_pretty(founder);
+    let num_requested = match query.count
+    {
+        Some(num) => usize::min(num as usize, list.len()),
+        None => 1
+    };
+    let indices = rand::seq::index::sample(&mut rand::thread_rng(), list.len(), num_requested);
+    let mut founders = Vec::new();
+    for i in indices
+    {
+        founders.push(&list[i]);
+    }
+    let result = serde_json::to_string_pretty(&founders);
     match result
     {
         Ok(json) => HttpResponse::Ok().content_type(ContentType::json()).body(json),
@@ -69,11 +88,24 @@ async fn get_test(data: web::Data<FounderState>) -> impl Responder
 #[derive(Serialize, Deserialize)]
 struct ImgRequest{ file_name: String }
 #[get("/get-founder-img")]
-async fn get_founder_img(info: web::Query<ImgRequest>) -> impl Responder
+async fn get_founder_img(query: web::Query<ImgRequest>) -> impl Responder
 {
-    match std::fs::read(&info.file_name)
+    let path = match std::path::PathBuf::from_str(&query.file_name)
     {
-        Ok(bytes) => HttpResponse::Ok().content_type(ContentType::jpeg()).body(bytes),
+        Ok(path) if path.is_file() => path,
+        _ => {return HttpResponse::NotFound().finish()}
+    };
+    let content_type = if path.extension().unwrap() == "jpeg" || path.extension().unwrap() == "jpg"
+    {
+        ContentType::jpeg()
+    }
+    else
+    {
+        ContentType::png()
+    };
+    match std::fs::read(&query.file_name)
+    {
+        Ok(bytes) => HttpResponse::Ok().content_type(content_type).body(bytes),
         Err(_) => HttpResponse::NotFound().finish()
     }
 }
