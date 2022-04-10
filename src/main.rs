@@ -8,7 +8,7 @@ use std::{str::FromStr};
 extern crate diesel;
 use diesel::{r2d2::ConnectionManager, PgConnection};
 use founder::{Founder, NewFounder};
-use actix_web::{get, put, web, App, HttpResponse, HttpServer, Responder, http::header::ContentType, post, delete};
+use actix_web::{get, put, web, App, HttpResponse, HttpServer, Responder, http::header::{ContentType}, post, delete};
 
 use r2d2::{Pool};
 use serde::{Deserialize, Serialize};
@@ -53,7 +53,7 @@ async fn home() -> impl Responder
 #[derive(Serialize, Deserialize)]
 struct GetFounderQueryParams { count: Option<u8> }
 #[get("/founder")]
-async fn get_founder(query: web::Query<GetFounderQueryParams>, pool: web::Data<DBPool>) -> impl Responder
+async fn get_founder(query: web::Query<GetFounderQueryParams>, pool: web::Data<DBPool>) -> Result<impl Responder, actix_web::error::Error>
 {
     let num_requested = match query.count
     {
@@ -62,15 +62,18 @@ async fn get_founder(query: web::Query<GetFounderQueryParams>, pool: web::Data<D
     };
     let result = web::block(move ||
         {
-            let conn = pool.get()?;
+            let conn = pool.get().expect("Connection retreival failed");
             dbactions::get_random_user(&conn, num_requested)
         }
-    ).await.unwrap().unwrap();
-    let result = serde_json::to_string_pretty(&result);
-    match result
+    ).await
+    .map_err(actix_web::error::ErrorInternalServerError)?
+    .map_err(actix_web::error::ErrorBadRequest)?;
+
+    let json_result = serde_json::to_string_pretty(&result);
+    match json_result
     {
-        Ok(json) => HttpResponse::Ok().content_type(ContentType::json()).body(json),
-        Err(output) => HttpResponse::NotFound().body(output.to_string())
+        Ok(json) => Ok(HttpResponse::Ok().content_type(ContentType::json()).body(json)),
+        Err(output) => Ok(HttpResponse::NotFound().body(output.to_string()))
     }
 }
 
@@ -100,55 +103,62 @@ async fn get_founder_img(query: web::Query<ImgRequest>) -> impl Responder
 }
 
 #[put("/founder")]
-async fn update_founder(updated_founder: web::Json<Founder>, pool: web::Data<DBPool>) -> impl Responder
+async fn update_founder(updated_founder: web::Json<Founder>, pool: web::Data<DBPool>) -> Result<impl Responder, actix_web::error::Error>
 {
     let new_founder: Founder = updated_founder.0;
     //Insert into database here
     let _result = web::block(move ||
         {
-            let conn = pool.get()?;
+            let conn = pool.get().expect("Connection retreival failed");
             dbactions::update_user(&conn, new_founder)
         }
-    ).await;
-    HttpResponse::Ok().finish()
+    ).await
+    .map_err(actix_web::error::ErrorInternalServerError)?
+    .map_err(actix_web::error::ErrorBadRequest)?;
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[post("/founder")]
-async fn create_founder(new_founder_json: web::Json<NewFounder>, pool: web::Data<DBPool>) -> impl Responder
+async fn create_founder(new_founder_json: web::Json<NewFounder>, pool: web::Data<DBPool>) -> Result<impl Responder, actix_web::error::Error>
 {
     let new_founder = new_founder_json.0;
 
     let new_founder = web::block(move ||
         {
-            let conn = pool.get()?;
+            let conn = pool.get().expect("Connection retreival failed");
             dbactions::insert_user(&conn, new_founder)
         }
-    ).await.unwrap().unwrap();
+    ).await
+    .map_err(actix_web::error::ErrorInternalServerError)?
+    .map_err(actix_web::error::ErrorBadRequest)?;
 
     let result = serde_json::to_string_pretty(&new_founder);
     match result
     {
-        Ok(json) => HttpResponse::Ok().content_type(ContentType::json()).body(json),
-        Err(output) => HttpResponse::InternalServerError().body(output.to_string())
+        Ok(json) => Ok(HttpResponse::Ok().content_type(ContentType::json()).body(json)),
+        Err(output) => Ok(HttpResponse::InternalServerError().body(output.to_string()))
     }
 }
 
 #[delete("/founder")]
-async fn delete_founder(founder_json: web::Json<Founder>, pool: web::Data<DBPool>) -> impl Responder
+async fn delete_founder(founder_json: web::Json<Founder>, pool: web::Data<DBPool>) -> Result<impl Responder, actix_web::error::Error>
 {
     let new_founder = founder_json.0;
 
     let new_founder = web::block(move ||
         {
-            let conn = pool.get()?;
+            let conn = pool.get().expect("Connection retreival failed");
             dbactions::delete_user(&conn, new_founder)
         }
-    ).await.unwrap().unwrap();
+    ).await
+    .map_err(actix_web::error::ErrorInternalServerError)?
+    .map_err(actix_web::error::ErrorBadRequest)?;
 
     let result = serde_json::to_string_pretty(&new_founder);
     match result
     {
-        Ok(json) => HttpResponse::Ok().content_type(ContentType::json()).body(json),
-        Err(output) => HttpResponse::InternalServerError().body(output.to_string())
+        Ok(json) => Ok(HttpResponse::Ok().content_type(ContentType::json()).body(json)),
+        Err(output) => Ok(HttpResponse::InternalServerError().body(output.to_string()))
     }
 }

@@ -1,6 +1,6 @@
 table! {
-    founders (uuid) {
-        uuid -> Uuid,
+    founders (id) {
+        id -> Uuid,
         name -> Text,
         company_name -> Text,
         bio -> Text,

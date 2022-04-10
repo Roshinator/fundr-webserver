@@ -17,10 +17,10 @@ use diesel::{*};
 // }
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Insertable, Debug, AsChangeset, Identifiable)]
-#[primary_key(uuid)]
+#[primary_key(id)]
 pub struct Founder
 {
-    pub uuid: Uuid,
+    pub id: Uuid,
     pub name: String,
     pub company_name: String,
     pub bio: String,
@@ -42,7 +42,7 @@ impl From<NewFounder> for Founder
     {
         Founder
         {
-            uuid: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             name: nf.name,
             company_name: nf.company_name,
             bio: nf.bio,
