@@ -1,55 +1,45 @@
 mod founder;
+mod dbactions;
+mod schema;
 
-use std::{sync::Mutex, str::FromStr};
+use std::{str::FromStr};
 
-use founder::{Founder, FounderUuid};
-use actix_web::{get, web, App, HttpResponse, HttpServer, Responder, http::header::ContentType};
+#[macro_use]
+extern crate diesel;
+use diesel::{r2d2::ConnectionManager, PgConnection};
+use founder::{Founder, NewFounder};
+use actix_web::{get, put, web, App, HttpResponse, HttpServer, Responder, http::header::ContentType, post, delete};
 
+use r2d2::{Pool};
 use serde::{Deserialize, Serialize};
 
-struct FounderState
-{
-    founders: Mutex<Vec<Founder>>
-}
+type DBPool = Pool<ConnectionManager<PgConnection>>;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()>
 {
-    let preinit = vec!
-    [
-        Founder
-        {
-            uuid: FounderUuid::new(),
-            name: String::from("Tim Apple"),
-            company_name: String::from("Apple"),
-            bio: String::from("Computer but sexy"),
-            image: std::path::PathBuf::from_str("images/test.jpg").unwrap()
-        },
-        Founder
-        {
-            uuid: FounderUuid::new(),
-            name: String::from("Jeff Bezos"),
-            company_name: String::from("Amazon"),
-            bio: String::from("Imagine shopping but internet"),
-            image: std::path::PathBuf::from_str("images/pngtest.png").unwrap()
-        },
-    ];
-    let founder_list = web::Data::new
-    (
-        FounderState
-        {
-            founders: Mutex::new(preinit)
-        }
-    );
+    println!("🍆🍆🍆");
+    println!("🍑🍑🍑");
+
+
+
+
+    dotenv::dotenv().ok();
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let manager = ConnectionManager::<PgConnection>::new(database_url);
+    let pool = r2d2::Pool::builder().build(manager).expect("Failed to create pool.");
 
     HttpServer::new(move || {
         App::new()
             .service(home)
             .service(get_founder)
             .service(get_founder_img)
-            .app_data(founder_list.clone())
+            .service(update_founder)
+            .service(create_founder)
+            .service(delete_founder)
+            .app_data(web::Data::new(pool.clone()))
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("192.168.1.21", 8080))?
     .run()
     .await
 }
@@ -62,22 +52,21 @@ async fn home() -> impl Responder
 
 #[derive(Serialize, Deserialize)]
 struct GetFounderQueryParams { count: Option<u8> }
-#[get("/get-founder")]
-async fn get_founder(query: web::Query<GetFounderQueryParams>, data: web::Data<FounderState>) -> impl Responder
+#[get("/founder")]
+async fn get_founder(query: web::Query<GetFounderQueryParams>, pool: web::Data<DBPool>) -> impl Responder
 {
-    let list = data.founders.lock().unwrap();
     let num_requested = match query.count
     {
-        Some(num) => usize::min(num as usize, list.len()),
+        Some(x) => x as i64,
         None => 1
     };
-    let indices = rand::seq::index::sample(&mut rand::thread_rng(), list.len(), num_requested);
-    let mut founders = Vec::new();
-    for i in indices
-    {
-        founders.push(&list[i]);
-    }
-    let result = serde_json::to_string_pretty(&founders);
+    let result = web::block(move ||
+        {
+            let conn = pool.get()?;
+            dbactions::get_random_user(&conn, num_requested)
+        }
+    ).await.unwrap().unwrap();
+    let result = serde_json::to_string_pretty(&result);
     match result
     {
         Ok(json) => HttpResponse::Ok().content_type(ContentType::json()).body(json),
@@ -87,7 +76,7 @@ async fn get_founder(query: web::Query<GetFounderQueryParams>, data: web::Data<F
 
 #[derive(Serialize, Deserialize)]
 struct ImgRequest{ file_name: String }
-#[get("/get-founder-img")]
+#[get("/founder/image")]
 async fn get_founder_img(query: web::Query<ImgRequest>) -> impl Responder
 {
     let path = match std::path::PathBuf::from_str(&query.file_name)
@@ -107,5 +96,59 @@ async fn get_founder_img(query: web::Query<ImgRequest>) -> impl Responder
     {
         Ok(bytes) => HttpResponse::Ok().content_type(content_type).body(bytes),
         Err(_) => HttpResponse::NotFound().finish()
+    }
+}
+
+#[put("/founder")]
+async fn update_founder(updated_founder: web::Json<Founder>, pool: web::Data<DBPool>) -> impl Responder
+{
+    let new_founder: Founder = updated_founder.0;
+    //Insert into database here
+    let _result = web::block(move ||
+        {
+            let conn = pool.get()?;
+            dbactions::update_user(&conn, new_founder)
+        }
+    ).await;
+    HttpResponse::Ok().finish()
+}
+
+#[post("/founder")]
+async fn create_founder(new_founder_json: web::Json<NewFounder>, pool: web::Data<DBPool>) -> impl Responder
+{
+    let new_founder = new_founder_json.0;
+
+    let new_founder = web::block(move ||
+        {
+            let conn = pool.get()?;
+            dbactions::insert_user(&conn, new_founder)
+        }
+    ).await.unwrap().unwrap();
+
+    let result = serde_json::to_string_pretty(&new_founder);
+    match result
+    {
+        Ok(json) => HttpResponse::Ok().content_type(ContentType::json()).body(json),
+        Err(output) => HttpResponse::InternalServerError().body(output.to_string())
+    }
+}
+
+#[delete("/founder")]
+async fn delete_founder(founder_json: web::Json<Founder>, pool: web::Data<DBPool>) -> impl Responder
+{
+    let new_founder = founder_json.0;
+
+    let new_founder = web::block(move ||
+        {
+            let conn = pool.get()?;
+            dbactions::delete_user(&conn, new_founder)
+        }
+    ).await.unwrap().unwrap();
+
+    let result = serde_json::to_string_pretty(&new_founder);
+    match result
+    {
+        Ok(json) => HttpResponse::Ok().content_type(ContentType::json()).body(json),
+        Err(output) => HttpResponse::InternalServerError().body(output.to_string())
     }
 }

@@ -1,47 +1,52 @@
-use std::path::PathBuf;
+
 use uuid::Uuid;
 use serde::{Serialize, Deserialize, de::Visitor};
+use crate::schema::founders;
+use diesel::{*};
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct FounderUuid(Uuid);
-impl FounderUuid
-{
-    pub fn new() -> FounderUuid
-    {
-        FounderUuid(Uuid::new_v4())
-    }
-}
+// #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
+// #[derive(AsExpression, FromSqlRow)]
+// #[sql_type = "diesel::sql_types::Uuid"]
+// pub struct FounderUuid(Uuid);
+// impl FounderUuid
+// {
+//     pub fn new() -> FounderUuid
+//     {
+//         FounderUuid(Uuid::new_v4())
+//     }
+// }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Queryable, Insertable, Debug, AsChangeset, Identifiable)]
+#[primary_key(uuid)]
 pub struct Founder
 {
-    pub uuid: FounderUuid,
+    pub uuid: Uuid,
     pub name: String,
     pub company_name: String,
     pub bio: String,
-    pub image: PathBuf,
+    pub image: String,
 }
 
-impl Serialize for FounderUuid
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NewFounder
 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer
-    {
-        serializer.serialize_u128(self.0.as_u128())
-    }
+    pub name: String,
+    pub company_name: String,
+    pub bio: String,
+    pub image: String,
 }
 
-impl<'de> Deserialize<'de> for FounderUuid
+impl From<NewFounder> for Founder
 {
-    fn deserialize<D>(deserializer: D) -> Result<FounderUuid, D::Error>
-    where
-        D: serde::Deserializer<'de>
+    fn from(nf: NewFounder) -> Self
     {
-        match deserializer.deserialize_u128(U128Visior)
+        Founder
         {
-            Ok(val) => Ok(FounderUuid(Uuid::from_u128(val))),
-            Err(x) => Err(x)
+            uuid: Uuid::new_v4(),
+            name: nf.name,
+            company_name: nf.company_name,
+            bio: nf.bio,
+            image: nf.image
         }
     }
 }
