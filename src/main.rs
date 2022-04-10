@@ -21,9 +21,6 @@ async fn main() -> std::io::Result<()>
     println!("🍆🍆🍆");
     println!("🍑🍑🍑");
 
-
-
-
     dotenv::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let manager = ConnectionManager::<PgConnection>::new(database_url);
@@ -63,7 +60,7 @@ async fn get_founder(query: web::Query<GetFounderQueryParams>, pool: web::Data<D
     let result = web::block(move ||
         {
             let conn = pool.get().expect("Connection retreival failed");
-            dbactions::get_random_user(&conn, num_requested)
+            dbactions::founders::get_random_user(&conn, num_requested)
         }
     ).await
     .map_err(actix_web::error::ErrorInternalServerError)?
@@ -110,7 +107,7 @@ async fn update_founder(updated_founder: web::Json<Founder>, pool: web::Data<DBP
     let _result = web::block(move ||
         {
             let conn = pool.get().expect("Connection retreival failed");
-            dbactions::update_user(&conn, new_founder)
+            dbactions::founders::update_user(&conn, new_founder)
         }
     ).await
     .map_err(actix_web::error::ErrorInternalServerError)?
@@ -127,7 +124,7 @@ async fn create_founder(new_founder_json: web::Json<NewFounder>, pool: web::Data
     let new_founder = web::block(move ||
         {
             let conn = pool.get().expect("Connection retreival failed");
-            dbactions::insert_user(&conn, new_founder)
+            dbactions::founders::insert_user(&conn, new_founder)
         }
     ).await
     .map_err(actix_web::error::ErrorInternalServerError)?
@@ -142,14 +139,14 @@ async fn create_founder(new_founder_json: web::Json<NewFounder>, pool: web::Data
 }
 
 #[delete("/founder")]
-async fn delete_founder(founder_json: web::Json<Founder>, pool: web::Data<DBPool>) -> Result<impl Responder, actix_web::error::Error>
+async fn delete_founder(founder_json: web::Json<uuid::Uuid>, pool: web::Data<DBPool>) -> Result<impl Responder, actix_web::error::Error>
 {
     let new_founder = founder_json.0;
 
     let new_founder = web::block(move ||
         {
             let conn = pool.get().expect("Connection retreival failed");
-            dbactions::delete_user(&conn, new_founder)
+            dbactions::founders::delete_user(&conn, new_founder)
         }
     ).await
     .map_err(actix_web::error::ErrorInternalServerError)?
